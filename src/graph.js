@@ -6,16 +6,14 @@ export function drawGraph(svgElement, data) {
   const width = svgElement.clientWidth;
   const height = svgElement.clientHeight;
 
-  // D3 matches links to nodes by exact id: force strings
   const nodes = data.nodes.map(d => ({ ...d, id: String(d.id) }));
   const links = data.links.map(d => ({ ...d, source: String(d.source), target: String(d.target) }));
 
   const svg = d3.select(svgElement);
   svg.selectAll("*").remove();
-  const g = svg.append("g");                       // everything lives in one container group
+  const g = svg.append("g");
   const tooltip = d3.select("#tooltip");
 
-  // Force simulation: link + charge + center, plus forceX/Y pulling toward the middle
   const simulation = d3.forceSimulation(nodes)
     .force("link", d3.forceLink(links).id(d => d.id).distance(30))
     .force("charge", d3.forceManyBody().strength(-40))
@@ -23,7 +21,6 @@ export function drawGraph(svgElement, data) {
     .force("x", d3.forceX(width / 2).strength(0.05))
     .force("y", d3.forceY(height / 2).strength(0.05));
 
-  // One <line> per link, width scaled by value
   const link = g.append("g")
     .attr("stroke", "#999")
     .attr("stroke-opacity", 0.6)
@@ -32,7 +29,7 @@ export function drawGraph(svgElement, data) {
     .join("line")
     .attr("stroke-width", d => Math.sqrt(d.value));
 
-  // One <circle> per node, FSU garnet, with hover tooltip
+  // Bonus: tooltip
   const node = g.append("g")
     .selectAll("circle")
     .data(nodes)
@@ -41,8 +38,16 @@ export function drawGraph(svgElement, data) {
     .attr("fill", FSU_GARNET)
     .call(drag(simulation))
     .on("mouseover", (event, d) => {
+      const authors = d.authors ?? [];
+      const shown = authors.slice(0, 5).join(", ") +
+                    (authors.length > 5 ? `, +${authors.length - 5} more` : "");
       tooltip
-        .html(`<strong>${d.title ?? "Untitled"}</strong><br/>Year: ${d.year ?? "Unknown"}<br/>Field: ${d.group}<br/>${d.id}`)
+        .html(
+          `<strong>${esc(truncate(d.title ?? "Untitled", 100))}</strong><br/>` +
+          `Year: ${d.year ?? "Unknown"}<br/>` +
+          `Venue: ${esc(truncate(d.venue ?? "Unknown", 60))}<br/>` +
+          `Authors: ${esc(truncate(shown || "Unknown", 120))}`
+        )
         .style("opacity", 1);
     })
     .on("mousemove", event => {
@@ -59,13 +64,13 @@ export function drawGraph(svgElement, data) {
     node.attr("cx", d => d.x).attr("cy", d => d.y);
   });
 
-  // Zoom + pan: attach to the <svg>, transform the container <g>
+  // Zoom and pan
   const zoom = d3.zoom()
     .scaleExtent([0.05, 20])
     .on("zoom", event => g.attr("transform", event.transform));
   svg.call(zoom);
 
-  // Zoom-to-fit once the simulation settles (only the first time)
+  // Zoom-to-fit
   let fitted = false;
   simulation.on("end", () => {
     if (fitted) return;
@@ -83,7 +88,7 @@ export function drawGraph(svgElement, data) {
       .call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
   });
 
-  // Returned so the caller can stop the simulation on unmount
+  // Returned caller can stop the simulation on unmount
   return () => simulation.stop();
 }
 
@@ -103,4 +108,15 @@ function drag(simulation) {
       d.fx = null;
       d.fy = null;
     });
+}
+
+// Escape text before putting it in tooltip's HTML (titles may contain < or &)
+function esc(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// Truncate
+function truncate(s, n) {
+  s = String(s);
+  return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
